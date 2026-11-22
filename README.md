@@ -1,6 +1,6 @@
 # Lifeboat
 
-**Live app (100% offline in-browser):** https://lifeboat.pages.dev
+**Live app (100% offline in-browser):** https://lifeboat-22u.pages.dev
 
 **100% offline, in-browser rescue and migration tool for AI companions.**
 

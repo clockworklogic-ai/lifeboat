@@ -453,7 +453,7 @@ export async function renderRescuedShareCard({
   sourceLabel = "AI Archive",
   destinationLabel = "Offline Portable Archive",
   showName = "",
-  siteLabel = "lifeboat.pages.dev · 0 bytes uploaded",
+  siteLabel = "lifeboat-22u.pages.dev · 0 bytes uploaded",
 }) {
   if (typeof document === "undefined") {
     return generateFallbackPNG("RESCUED", 120, 63);
