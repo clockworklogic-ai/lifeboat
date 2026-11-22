@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="100% offline in-browser rescue tool for Character.AI encrypted GDPR zips, ChatGPT #Keep4o archives, Replika exports, and SillyTavern cards. Zero uploads, zero tracking.">
+  <meta property="og:title" content="Lifeboat — Rescue Your AI Companions Offline">
+  <meta property="og:description" content="Unlock password-protected Character.AI GDPR zips, merge ChatGPT #Keep4o threads, and export to Claude Projects, Kindroid, Grok, SillyTavern, or an offline HTML book. Zero servers, zero uploads.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://lifeboat.pages.dev">
+  <title>Lifeboat — Offline AI Companion Rescue &amp; Migration</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">LB</div>
+        <h1 class="brand-name serif">Lifeboat</h1>
+      </div>
+      <span id="offline-pill" class="trust-pill" title="Runs 100% locally in your browser. Disconnect Wi-Fi before dropping your archive to verify.">
+        <span class="trust-dot"></span>
+        <span id="offline-label">100% Client-Side · Turn off Wi-Fi to verify</span>
+      </span>
+      <div class="top-actions">
+        <button id="btn-new-file" class="small hidden" type="button">+ Load Another Archive</button>
+        <button id="btn-theme" class="small ghost" type="button" title="Toggle light/dark theme">Theme</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Hero & Dropzone -->
+    <section id="landing-section">
+      <div class="hero">
+        <span class="hero-kicker mono">Zero Servers · Airplane-Mode Verifiable · MIT Open Source</span>
+        <h2 class="serif">Rescue your AI companions before the lights go out.</h2>
+        <p>
+          Drop your password-protected <strong>Character.AI</strong> GDPR <code>.zip</code>,
+          <strong>ChatGPT</strong> (<code>#Keep4o</code>) export, <strong>Replika</strong> archive, or
+          <strong>SillyTavern</strong> card. Everything unlocks and compiles strictly inside your browser—zero bytes ever leave your device.
+        </p>
+        <div class="format-pills mono">
+          <span class="pill">Character.AI Encrypted .zip</span>
+          <span class="pill">ChatGPT conversations.json (#Keep4o)</span>
+          <span class="pill">Replika Bundle</span>
+          <span class="pill">CAI Tools / amavie</span>
+          <span class="pill">SillyTavern V2/V3 .png &amp; .jsonl</span>
+        </div>
+
+        <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Drop export file or click to browse">
+          <p class="dropzone-title">Drop your .zip, .json, .jsonl, or .png archive here</p>
+          <p class="dropzone-sub">
+            Works even when Windows Explorer or macOS Archive Utility refuses to open Character.AI's password-protected zip.<br>
+            You can also select multiple unzipped files (<code>message.json</code> + <code>character.json</code>) at once.
+          </p>
+          <div class="dropzone-actions">
+            <button id="btn-choose" class="primary" type="button">Choose Export File(s)</button>
+            <button id="btn-sample" type="button">Try Sample Archive</button>
+          </div>
+          <input id="file-input" type="file" multiple accept=".zip,.charx,.json,.jsonl,.png,.txt" class="hidden">
+        </div>
+
+        <!-- Password Unlock Card (appears automatically on encrypted Character.AI zips) -->
+        <div id="unlock-card" class="unlock-card hidden">
+          <h3 class="serif">This archive is password-protected</h3>
+          <p id="unlock-desc">
+            Official Character.AI GDPR exports are encrypted with your <strong>account email address in all lowercase</strong>.
+            Unlocking happens 100% locally in your browser—your password is never sent anywhere.
+          </p>
+          <form id="unlock-form" class="unlock-row">
+            <input id="zip-password" type="password" autocomplete="off" placeholder="yourname@email.com (lowercase)" required>
+            <button id="btn-unlock" class="primary" type="submit">Unlock Locally</button>
+            <button id="btn-toggle-pw" class="small ghost" type="button">Show</button>
+          </form>
+          <div id="unlock-error" class="unlock-hint" style="color:var(--danger)"></div>
+          <div class="unlock-hint">
+            Tip: If you type uppercase letters or trailing spaces, Lifeboat automatically retries the trimmed lowercase version.
+          </div>
+        </div>
+
+        <div id="status-banner" class="status-banner hidden">
+          <span id="status-text"></span>
+        </div>
+      </div>
+
+      <!-- 30-second export instructions -->
+      <div class="guide-grid">
+        <div class="guide-card">
+          <h4>Character.AI Export</h4>
+          <ol>
+            <li><strong>Official zip:</strong> Settings → Manage Account &amp; Data → Export Data (arrives by email; password is your lowercase email; link expires in 7 days).</li>
+            <li><strong>Instant backup:</strong> Use the <em>CAI Tools</em> browser extension to download active chats immediately as JSON/JSONL, then drop here.</li>
+            <li>Drop the locked <code>.zip</code> straight above—no 7-Zip or Keka needed.</li>
+          </ol>
+        </div>
+        <div class="guide-card">
+          <h4>ChatGPT (#Keep4o) Export</h4>
+          <ol>
+            <li>Open ChatGPT → Settings → Data Controls → <strong>Export Data</strong>.</li>
+            <li>Download the <code>.zip</code> from your email and drop it directly above.</li>
+            <li>Filter to <strong>GPT-4o threads</strong>, select all threads with your companion, and click <strong>Merge into One Companion</strong> to build a single Claude/Grok/SillyTavern pack.</li>
+          </ol>
+        </div>
+        <div class="guide-card">
+          <h4>Replika &amp; SillyTavern</h4>
+          <ol>
+            <li>Drop your Replika archive (<code>chat_history.json</code> + <code>memory.json</code> + <code>diary.json</code>) to preserve saved facts and diary entries.</li>
+            <li>Or drop any existing Tavern V2/V3 <code>.png</code>, <code>.charx</code>, or <code>.jsonl</code> log to convert into Claude Projects, Kindroid, or an offline HTML book.</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- Post-Import Workspace -->
+    <section id="workspace-section" class="workspace hidden">
+      <!-- Left Sidebar: Companions + #Keep4o Filter + Merge -->
+      <aside class="panel">
+        <div class="panel-head">
+          <h3>Companions (<span id="comp-count">0</span>)</h3>
+          <button id="btn-clear-all" class="small ghost" type="button">Reset</button>
+        </div>
+
+        <div class="sidebar-controls">
+          <input id="comp-search" type="search" placeholder="Filter chats by name...">
+          <div class="filter-row">
+            <button id="filter-all" class="chip active" type="button">All</button>
+            <button id="filter-4o" class="chip" type="button">#Keep4o (GPT-4o)</button>
+            <button id="filter-deep" class="chip" type="button">10+ msgs</button>
+          </div>
+        </div>
+
+        <div id="merge-bar" class="merge-bar hidden">
+          <div><strong id="merge-count">0</strong> threads selected for unified companion</div>
+          <input id="merge-name" type="text" placeholder="Unified companion name (e.g. Solstice)">
+          <div style="display:flex;gap:0.4rem">
+            <button id="btn-merge" class="primary small" type="button" style="flex:1">Merge into One Companion</button>
+            <button id="btn-clear-sel" class="small ghost" type="button">Clear</button>
+          </div>
+        </div>
+
+        <div id="comp-list" class="comp-list"></div>
+      </aside>
+
+      <!-- Main Detail Area -->
+      <div class="panel">
+        <div class="comp-header">
+          <div>
+            <div class="comp-title-row">
+              <h2 id="active-name" class="comp-title serif">Companion</h2>
+              <span id="active-source-badge" class="pill mono"></span>
+            </div>
+            <div id="active-stats" class="stat-strip mono"></div>
+          </div>
+          <div style="display:flex;gap:0.45rem;flex-wrap:wrap">
+            <button id="btn-rename" class="small" type="button">Rename</button>
+            <button id="btn-swap-speakers" class="small" type="button" title="Fix user/companion roles if flat message.json guessed wrong">Swap User ↔ Bot</button>
+          </div>
+        </div>
+
+        <div id="inferred-warning" class="status-banner warn hidden" style="margin:0.85rem 1.25rem 0;max-width:none">
+          <span>Character.AI's flat <code>message.json</code> omitted speaker flags on some rows, so turns were alternating-inferred. Check <strong>Read &amp; Search</strong> and click <strong>Swap User ↔ Bot</strong> if roles look reversed.</span>
+        </div>
+
+        <nav class="tabs" role="tablist">
+          <button class="tab-btn active" data-tab="export" type="button">1. Export &amp; Migrate</button>
+          <button class="tab-btn" data-tab="read" type="button">2. Read &amp; Search</button>
+          <button class="tab-btn" data-tab="voice" type="button">3. Voice &amp; Memories</button>
+          <button class="tab-btn" data-tab="studio" type="button">4. Card Studio</button>
+        </nav>
+
+        <!-- TAB 1: EXPORT & MIGRATE -->
+        <div id="tab-export" class="tab-body">
+          <details class="extra-box">
+            <summary>+ Optional: Paste Saved ChatGPT Memories or Extra Custom Instructions</summary>
+            <p>
+              OpenAI's official export omits active ChatGPT Memories. Paste them here (Settings → Personalization → Manage Memories) and Lifeboat automatically includes them in your Claude Project Pack, Kindroid/Grok prompts, and HTML Keepsake.
+            </p>
+            <textarea id="extra-memories" placeholder="Paste saved memories, nicknames, boundaries, or shared backstory here..."></textarea>
+          </details>
+
+          <div class="export-grid">
+            <div class="export-card featured">
+              <div>
+                <h4>Offline Keepsake Scrapbook <span class="pill mono">.html / .md</span></h4>
+                <p>Turns ugly raw JSON into a clean, searchable, dark/light chat-bubble book you can open forever offline or print to PDF.</p>
+              </div>
+              <div class="card-actions">
+                <button id="dl-html" class="primary small" type="button">Download HTML Book</button>
+                <button id="dl-md" class="small" type="button">Download Markdown</button>
+              </div>
+            </div>
+
+            <div class="export-card featured">
+              <div>
+                <h4>Claude Project Pack <span class="pill mono">.zip</span></h4>
+                <p>Top #Keep4o destination: bundled <code>Project Instructions</code> + <code>Memory Bible</code> + <code>Voice Samples</code> + verbatim last 20 turns so Turn 1 picks up seamlessly.</p>
+              </div>
+              <div class="card-actions">
+                <button id="dl-claude-zip" class="primary small" type="button">Download Claude Pack (.zip)</button>
+                <button id="copy-claude-inst" class="small" type="button">Copy Instructions</button>
+              </div>
+            </div>
+
+            <div class="export-card">
+              <div>
+                <h4>SillyTavern / Janitor / Chub <span class="pill mono">.png + .jsonl</span></h4>
+                <p>Dual-chunk Tavern V2 (<code>chara</code>) + V3 (<code>ccv3</code>) character card PNG with Lorebook, plus full importable <code>.jsonl</code> chat history so your thread resumes.</p>
+              </div>
+              <div class="card-actions">
+                <button id="dl-tavern-png" class="primary small" type="button">Download Card (.png)</button>
+                <button id="dl-st-jsonl" class="small" type="button">Download Chat (.jsonl)</button>
+                <button id="dl-lore-json" class="small" type="button">Lorebook (.json)</button>
+              </div>
+            </div>
+
+            <div class="export-card">
+              <div>
+                <h4>Complete Rescue Vault <span class="pill mono">All-in-One .zip</span></h4>
+                <p>Every format in one archive: HTML Scrapbook, Markdown, Claude Project files, Kindroid/Grok prompts, Tavern V2+V3 PNG, and SillyTavern JSONL.</p>
+              </div>
+              <div class="card-actions">
+                <button id="dl-all-zip" class="primary small" type="button">Download Everything (.zip)</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Destination Prompt Packs (Kindroid / Grok / Mistral / ChatGPT) -->
+          <div class="prompt-drawer">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.65rem">
+              <h4 style="margin:0;font-size:0.96rem">Copy-Paste Destination Prompts (Auto-Fitted to Platform Limits)</h4>
+              <div class="prompt-tabs">
+                <button class="chip active" data-platform="kindroid" type="button">Kindroid</button>
+                <button class="chip" data-platform="grok" type="button">Grok / Mistral</button>
+                <button class="chip" data-platform="chatgpt" type="button">ChatGPT Custom</button>
+              </div>
+            </div>
+            <div id="prompt-fields"></div>
+          </div>
+
+          <!-- Anonymized Rescued Share Card -->
+          <div class="prompt-drawer">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.6rem">
+              <div>
+                <h4 style="margin:0 0 0.2rem;font-size:0.96rem">Anonymized "Rescued" Proof Card (Zero Chat Text)</h4>
+                <p style="margin:0;font-size:0.82rem;color:var(--muted)">
+                  Share that you rescued your archive safely offline without exposing a single private word.
+                </p>
+              </div>
+              <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+                <label style="font-size:0.8rem;display:inline-flex;align-items:center;gap:0.35rem;cursor:pointer">
+                  <input id="share-show-name" type="checkbox" style="width:auto"> Show companion name
+                </label>
+                <button id="dl-share-card" class="primary small" type="button">Download Proof Card (.png)</button>
+              </div>
+            </div>
+            <img id="share-card-preview" class="share-preview" alt="Anonymized rescued archive card preview">
+          </div>
+        </div>
+
+        <!-- TAB 2: READ & SEARCH -->
+        <div id="tab-read" class="tab-body hidden">
+          <div class="reader-toolbar">
+            <input id="bm25-query" type="search" placeholder="BM25 episodic memory search (e.g. lighthouse, Miso, Kyoto)...">
+            <button id="btn-bm25-clear" class="small ghost hidden" type="button">Clear Search</button>
+            <span id="reader-count" class="mono" style="font-size:0.78rem;color:var(--muted)"></span>
+          </div>
+          <div id="bm25-results" class="bm25-results hidden"></div>
+          <div id="chat-feed" class="chat-feed"></div>
+          <div id="load-more-wrap" style="text-align:center;margin-top:0.85rem" class="hidden">
+            <button id="btn-load-more" class="small" type="button">Load Earlier Messages</button>
+          </div>
+        </div>
+
+        <!-- TAB 3: VOICE & MEMORIES -->
+        <div id="tab-voice" class="tab-body hidden">
+          <div id="voice-metrics" class="metrics-row"></div>
+          <div class="field-block">
+            <div class="field-head">
+              <span>Compiled Style Lock Directive (Editable — applied to all exports)</span>
+            </div>
+            <textarea id="voice-style-lock"></textarea>
+          </div>
+          <div id="voice-phrases" style="margin:0.85rem 0 1.25rem;display:flex;gap:0.4rem;flex-wrap:wrap"></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.65rem">
+            <h4 style="margin:0;font-size:0.95rem">Extracted Lorebook &amp; Memory Bible Entries</h4>
+            <button id="btn-add-lore" class="small" type="button">+ Add Memory Entry</button>
+          </div>
+          <div id="lore-list"></div>
+        </div>
+
+        <!-- TAB 4: CARD STUDIO -->
+        <div id="tab-studio" class="tab-body hidden">
+          <div class="studio-grid">
+            <div class="portrait-box">
+              <img id="card-portrait-preview" alt="Companion Tavern card portrait">
+              <button id="btn-upload-avatar" class="small" type="button" style="width:100%;margin-bottom:0.45rem">Upload Custom Portrait</button>
+              <button id="btn-dl-studio-png" class="primary small" type="button" style="width:100%;margin-bottom:0.45rem">Download Dual V2/V3 .png</button>
+              <button id="btn-dl-studio-json" class="small ghost" type="button" style="width:100%">Download Card .json</button>
+              <input id="avatar-input" type="file" accept="image/png,image/jpeg,image/webp" class="hidden">
+              <p id="png-verify-note" class="mono" style="font-size:0.74rem;color:var(--ok);margin-top:0.55rem"></p>
+            </div>
+            <div>
+              <div class="field-block">
+                <div class="field-head"><span>Name</span></div>
+                <input id="studio-name" type="text">
+              </div>
+              <div class="field-block">
+                <div class="field-head"><span>Description / Identity</span></div>
+                <textarea id="studio-desc"></textarea>
+              </div>
+              <div class="field-block">
+                <div class="field-head"><span>Scenario / Continuity</span></div>
+                <textarea id="studio-scen"></textarea>
+              </div>
+              <div class="field-block">
+                <div class="field-head"><span>First Message / Greeting</span></div>
+                <textarea id="studio-first"></textarea>
+              </div>
+              <div class="field-block">
+                <div class="field-head"><span>Example Dialogue (mes_example)</span></div>
+                <textarea id="studio-ex" style="min-height:130px"></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>Lifeboat · <a href="https://github.com/clockworklogic-ai/lifeboat" target="_blank" rel="noopener noreferrer" style="color:var(--ink);font-weight:600">MIT Open Source on GitHub</a> · 100% client-side (zero servers, zero telemetry, zero cookies).</span>
+    <span class="mono">Verify offline: load page → turn on Airplane Mode → drop your .zip.</span>
+  </footer>
+
+  <script src="./app.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "name": "lifeboat",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "100% offline in-browser rescue tool for Character.AI, ChatGPT (#Keep4o), Replika, and SillyTavern companions.",
+  "license": "MIT",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@zip.js/zip.js": "^2.7.61"
+  }
+}
