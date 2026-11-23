@@ -462,9 +462,12 @@ func parseCAIOfficialMessageJSON(msgRaw, charRaw, userRaw []byte) ([]*ImportResu
 	var results []*ImportResult
 	for chatID, msgs := range groups {
 		sort.SliceStable(msgs, func(i, j int) bool {
-			ti := strField(msgs[i], "create_time", strField(msgs[i], "timestamp", ""))
-			tj := strField(msgs[j], "create_time", strField(msgs[j], "timestamp", ""))
-			return ti < tj
+			ti := extractTimestamp(msgs[i])
+			tj := extractTimestamp(msgs[j])
+			if ti != "" && tj != "" {
+				return ti < tj
+			}
+			return false
 		})
 
 		var meta map[string]any

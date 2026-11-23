@@ -41,20 +41,135 @@ function strField(obj, ...keys) {
   return "";
 }
 
-function normalizeTimestamp(val) {
+const TIME_KEYS = [
+  "create_time",
+  "created",
+  "created_at",
+  "createdAt",
+  "created_time",
+  "createTime",
+  "send_date",
+  "sent_at",
+  "send_time",
+  "timestamp",
+  "date_unixtime",
+  "date",
+  "time",
+  "ts",
+  "datetime",
+  "last_update_time",
+  "update_time",
+  "updated_at",
+];
+
+function extractRawTimestamp(m) {
+  if (!m || typeof m !== "object") return "";
+  for (const k of TIME_KEYS) {
+    const v = m[k];
+    if (v !== undefined && v !== null && v !== "") return v;
+  }
+  if (m.candidate && typeof m.candidate === "object") {
+    for (const k of TIME_KEYS) {
+      const v = m.candidate[k];
+      if (v !== undefined && v !== null && v !== "") return v;
+    }
+  }
+  if (Array.isArray(m.candidates) && m.candidates.length > 0) {
+    const primary = m.primary_candidate_id
+      ? m.candidates.find((c) => c?.candidate_id === m.primary_candidate_id) || m.candidates[0]
+      : m.candidates[0];
+    if (primary && typeof primary === "object") {
+      for (const k of TIME_KEYS) {
+        const v = primary[k];
+        if (v !== undefined && v !== null && v !== "") return v;
+      }
+    }
+  }
+  if (m.turn_key && typeof m.turn_key === "object") {
+    for (const k of TIME_KEYS) {
+      const v = m.turn_key[k];
+      if (v !== undefined && v !== null && v !== "") return v;
+    }
+  }
+  if (m.metadata && typeof m.metadata === "object") {
+    for (const k of TIME_KEYS) {
+      const v = m.metadata[k];
+      if (v !== undefined && v !== null && v !== "") return v;
+    }
+  }
+  return "";
+}
+
+export function normalizeTimestamp(val) {
   if (val == null || val === "") return "";
+
+  // Protobuf / Firestore / Mongo style object timestamps
+  if (typeof val === "object") {
+    if (typeof val.$date === "string" || typeof val.$date === "number") {
+      return normalizeTimestamp(val.$date);
+    }
+    const sec = val.seconds ?? val._seconds;
+    if (typeof sec === "number" || (typeof sec === "string" && /^\d+$/.test(sec))) {
+      const nanos = Number(val.nanos ?? val._nanoseconds ?? 0) || 0;
+      const d = new Date(Number(sec) * 1000 + Math.floor(nanos / 1e6));
+      return Number.isNaN(d.getTime()) ? "" : d.toISOString();
+    }
+    return "";
+  }
+
   if (typeof val === "number" && Number.isFinite(val) && val > 0) {
-    // Seconds vs milliseconds vs microseconds
-    const ms = val > 1e14 ? val / 1000 : val > 1e11 ? val : val * 1000;
+    let ms;
+    if (val >= 1e17) ms = val / 1e6; // nanoseconds
+    else if (val >= 1e14) ms = val / 1e3; // microseconds
+    else if (val >= 1e11) ms = val; // milliseconds
+    else if (val >= 1e8) ms = val * 1000; // seconds
+    else return "";
     const d = new Date(ms);
     return Number.isNaN(d.getTime()) ? "" : d.toISOString();
   }
+
   if (typeof val === "string") {
-    const s = val.trim();
+    let s = val.trim();
     if (!s) return "";
-    if (/^\d+(\.\d+)?$/.test(s)) return normalizeTimestamp(Number(s));
-    const parsed = Date.parse(s);
+
+    // Numeric epoch string ("1700000000" or "1700000000.123456")
+    if (/^\d{9,19}(\.\d+)?$/.test(s)) {
+      return normalizeTimestamp(Number(s));
+    }
+
+    // SillyTavern / CAI Tools format: "2023-8-1 @12h 30m 45s 123ms"
+    const st = /^(\d{4})-(\d{1,2})-(\d{1,2})\s*@\s*(\d{1,2})h\s*(\d{1,2})m\s*(\d{1,2})s(?:\s*(\d{1,3})ms)?/i.exec(s);
+    if (st) {
+      const [, y, mo, d, h, mi, se, ms] = st;
+      const dt = new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi, +se, +(ms || 0)));
+      if (!Number.isNaN(dt.getTime())) return dt.toISOString();
+    }
+
+    // Postgres / Python / Character.AI microsecond & nanosecond format:
+    // "2024-05-29 10:20:48.049888+00:00", "2024-05-29T10:20:48.049888972+00:00",
+    // "2023-08-14 19:22:11.123456", "2023/08/14 19:22:11 UTC", "2023-08-14 19:22:11+0000"
+    const isoLike = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[T\s](\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?)?(?:\s*(Z|UTC|GMT|[+-]\d{2}:?\d{2}))?$/i.exec(s);
+    if (isoLike) {
+      const [, y, mo, d, h = "00", mi = "00", se = "00", frac = "", tzRaw = ""] = isoLike;
+      const pad2 = (n) => String(n).padStart(2, "0");
+      const ms = frac ? "." + frac.slice(0, 3).padEnd(3, "0") : ".000";
+      let tz = "Z";
+      if (tzRaw) {
+        const up = tzRaw.toUpperCase();
+        if (up === "Z" || up === "UTC" || up === "GMT") tz = "Z";
+        else if (/^[+-]\d{4}$/.test(up)) tz = up.slice(0, 3) + ":" + up.slice(3);
+        else tz = up;
+      }
+      const norm = `${y}-${pad2(mo)}-${pad2(d)}T${pad2(h)}:${pad2(mi)}:${pad2(se)}${ms}${tz}`;
+      const parsed = Date.parse(norm);
+      if (!Number.isNaN(parsed)) return new Date(parsed).toISOString();
+    }
+
+    // Human AM/PM without space ("May 14, 2024 8:23pm" -> "May 14, 2024 8:23 pm")
+    const fixedAmPm = s.replace(/(\d)(am|pm)\b/i, "$1 $2");
+    const parsed = Date.parse(fixedAmPm);
     if (!Number.isNaN(parsed)) return new Date(parsed).toISOString();
+
     return s;
   }
   return "";
@@ -105,7 +220,7 @@ export function parseFileMap(filesMap, archiveName = "archive", avatars = []) {
   }
 
   // 3. Character.AI Official GDPR export (data/message.json + data/character.json + data/user.json)
-  const caiMessage = findEntry(filesMap, ["message.json", "messages.json"]);
+  const caiMessage = findEntry(filesMap, ["message.json", "messages.json", "message.jsonl", "messages.jsonl"]);
   const caiCharacter = findEntry(filesMap, ["character.json", "characters.json"]);
   const caiUser = findEntry(filesMap, ["user.json"]);
   if (caiMessage) {
@@ -117,8 +232,8 @@ export function parseFileMap(filesMap, archiveName = "archive", avatars = []) {
     if (parsed.length > 0) return parsed;
   }
 
-  // 4. Character.AI older GDPR / CAI Tools bundle (histories.json + optional characters.json)
-  const caiHist = findEntry(filesMap, ["histories.json"]);
+  // 4. Character.AI older GDPR / CAI Tools bundle (histories.json / history.json + optional characters.json)
+  const caiHist = findEntry(filesMap, ["histories.json", "history.json"]);
   if (caiHist) {
     const parsed = parseCAIHistoriesZip(
       decodeText(caiHist.bytes),
@@ -237,6 +352,12 @@ export function parseSingleFile(rawBytes, filename = "export.json") {
   // amavie.character-ai-export community format
   if (obj.format === "amavie.character-ai-export" || (Array.isArray(obj.chats) && Array.isArray(obj.characters))) {
     return parseAmavieExport(obj);
+  }
+
+  // Generic multi-conversation wrapper: {"conversations": [{character_name/title, messages: [...]}]}
+  if (Array.isArray(obj.conversations) && obj.conversations.length > 0) {
+    const parsedConvs = parseConversationsWrapper(obj.conversations, fallbackName);
+    if (parsedConvs.length > 0) return parsedConvs;
   }
 
   // Tavern V2 / V3 JSON card
@@ -364,20 +485,34 @@ function looksLikeCAIOfficialMessages(arr) {
 }
 
 // Official Character.AI GDPR export: data/message.json + data/character.json + data/user.json
+// Supports JSON array, {"messages": [...]}, {"data": [...]}, and JSON Lines (NDJSON).
 function parseCAIOfficialGDPR(messageText, characterText, userText) {
-  let msgRaw;
+  let msgList = [];
+  const trimmed = String(messageText || "").trim();
+  if (!trimmed) return [];
+
   try {
-    msgRaw = JSON.parse(messageText);
+    const msgRaw = JSON.parse(trimmed);
+    msgList = Array.isArray(msgRaw)
+      ? msgRaw
+      : Array.isArray(msgRaw?.messages)
+        ? msgRaw.messages
+        : Array.isArray(msgRaw?.data)
+          ? msgRaw.data
+          : [];
   } catch {
-    return [];
+    // Fallback: JSON Lines (one JSON object per line)
+    for (const line of trimmed.split(/\r?\n/)) {
+      const l = line.trim();
+      if (!l) continue;
+      try {
+        const obj = JSON.parse(l);
+        if (obj && typeof obj === "object") msgList.push(obj);
+      } catch {
+        // skip bad line
+      }
+    }
   }
-  const msgList = Array.isArray(msgRaw)
-    ? msgRaw
-    : Array.isArray(msgRaw?.messages)
-      ? msgRaw.messages
-      : Array.isArray(msgRaw?.data)
-        ? msgRaw.data
-        : [];
   if (msgList.length === 0) return [];
 
   // Parse user.json to identify human author IDs/usernames
@@ -445,11 +580,12 @@ function parseCAIOfficialGDPR(messageText, characterText, userText) {
   let idx = 0;
 
   for (const [chatId, msgs] of groups.entries()) {
-    // Sort chronologically by create_time / timestamp
+    // Sort chronologically when timestamps are present (preserve file order on ties/missing)
     msgs.sort((a, b) => {
-      const ta = Date.parse(normalizeTimestamp(a.create_time || a.timestamp || a.created_at)) || 0;
-      const tb = Date.parse(normalizeTimestamp(b.create_time || b.timestamp || b.created_at)) || 0;
-      return ta - tb;
+      const ta = Date.parse(normalizeTimestamp(extractRawTimestamp(a)));
+      const tb = Date.parse(normalizeTimestamp(extractRawTimestamp(b)));
+      if (!Number.isNaN(ta) && !Number.isNaN(tb) && ta !== tb) return ta - tb;
+      return 0;
     });
 
     // Deduplicate multi-candidate swipes on the same turn_id if primary_candidate_id exists
@@ -503,7 +639,7 @@ function parseCAIOfficialGDPR(messageText, characterText, userText) {
       const m = deduped[i];
       const text = extractMessageText(m);
       if (!text) continue;
-      const ts = normalizeTimestamp(m.create_time || m.timestamp || m.created_at || m.send_date);
+      const ts = normalizeTimestamp(extractRawTimestamp(m));
       const explicit = extractExplicitRole(m, userIds);
       let role;
       let speaker;
@@ -564,6 +700,42 @@ function deduplicateTurnCandidates(msgs) {
   return out;
 }
 
+function parseConversationsWrapper(convs, fallbackName) {
+  const results = [];
+  let idx = 0;
+  for (const conv of convs) {
+    if (!conv || typeof conv !== "object") continue;
+    const msgs = Array.isArray(conv.messages)
+      ? conv.messages
+      : Array.isArray(conv.msgs)
+        ? conv.msgs
+        : Array.isArray(conv.turns)
+          ? conv.turns
+          : [];
+    if (msgs.length === 0) continue;
+    const charName =
+      strField(conv, "character_name", "characterName", "title", "name") ||
+      strField(conv.character, "name", "title") ||
+      `${fallbackName} ${idx + 1}`;
+    const desc = strField(conv, "description") || strField(conv.character, "description");
+    const greeting = strField(conv, "greeting") || strField(conv.character, "greeting");
+    results.push(
+      buildCompanionFromMessages(
+        "character_ai_conversations",
+        "Character.AI Export",
+        msgs,
+        charName,
+        "User",
+        desc,
+        greeting,
+        idx++
+      )
+    );
+  }
+  results.sort((a, b) => (b.stats?.total_turns || 0) - (a.stats?.total_turns || 0));
+  return results;
+}
+
 function parseAmavieExport(obj) {
   const charById = new Map();
   for (const c of obj.characters || []) {
@@ -620,8 +792,22 @@ function parseCAIHistoriesZip(histText, charText) {
   const groups = new Map();
   for (const h of histList) {
     const cid = strField(h, "character_external_id", "character_id", "character_name");
-    const msgs = Array.isArray(h.msgs) ? h.msgs : Array.isArray(h.turns) ? h.turns : [];
-    if (msgs.length === 0) continue;
+    const rawMsgs = Array.isArray(h.msgs)
+      ? h.msgs
+      : Array.isArray(h.turns)
+        ? h.turns
+        : Array.isArray(h.messages)
+          ? h.messages
+          : [];
+    if (rawMsgs.length === 0) continue;
+    // If a 2023 history only carries session-level `created` / `last_interaction`, stamp it on the opening turn when absent
+    const histTime = extractRawTimestamp(h) || h.last_interaction || "";
+    const msgs = rawMsgs.map((m, i) => {
+      if (i === 0 && m && typeof m === "object" && !extractRawTimestamp(m) && histTime) {
+        return { ...m, created: histTime };
+      }
+      return m;
+    });
     let detected = cid;
     for (const m of msgs) {
       const r = extractExplicitRole(m, new Set());
@@ -675,8 +861,21 @@ function parseCAIHistoriesObject(probe, fallbackName) {
       ? probe.histories.histories
       : [];
   for (const h of hists) {
-    const arr = Array.isArray(h.msgs) ? h.msgs : Array.isArray(h.turns) ? h.turns : [];
-    rawMsgs.push(...arr);
+    const arr = Array.isArray(h.msgs)
+      ? h.msgs
+      : Array.isArray(h.turns)
+        ? h.turns
+        : Array.isArray(h.messages)
+          ? h.messages
+          : [];
+    const histTime = extractRawTimestamp(h) || h.last_interaction || "";
+    arr.forEach((m, i) => {
+      if (i === 0 && m && typeof m === "object" && !extractRawTimestamp(m) && histTime) {
+        rawMsgs.push({ ...m, created: histTime });
+      } else {
+        rawMsgs.push(m);
+      }
+    });
   }
   return [
     buildCompanionFromMessages("character_ai", "Character.AI", rawMsgs, charName, "User", desc, greeting, 0),
@@ -939,8 +1138,13 @@ function parseJSONL(text, fallbackName) {
 }
 
 function extractMessageText(m) {
-  for (const k of ["raw_content", "text", "mes", "content", "message", "body"]) {
+  for (const k of ["raw_content", "text", "mes", "content", "message", "body", "msg", "utterance"]) {
     if (typeof m[k] === "string" && m[k].trim()) return cleanStr(m[k]);
+  }
+  if (m.candidate && typeof m.candidate === "object") {
+    for (const k of ["raw_content", "text", "content"]) {
+      if (typeof m.candidate[k] === "string" && m.candidate[k].trim()) return cleanStr(m.candidate[k]);
+    }
   }
   if (Array.isArray(m.candidates) && m.candidates.length > 0) {
     const primary = m.primary_candidate_id
@@ -949,16 +1153,22 @@ function extractMessageText(m) {
     if (typeof primary?.raw_content === "string" && primary.raw_content.trim()) {
       return cleanStr(primary.raw_content);
     }
+    if (typeof primary?.text === "string" && primary.text.trim()) {
+      return cleanStr(primary.text);
+    }
   }
   return "";
 }
 
 function extractExplicitRole(m, userIds) {
-  if (typeof m.is_user === "boolean") {
-    return { role: m.is_user ? "user" : "assistant", speaker: strField(m, "name", "speaker") };
-  }
-  if (typeof m.is_human === "boolean") {
-    return { role: m.is_human ? "user" : "assistant", speaker: strField(m, "name", "speaker") };
+  const humanFlags = [m.is_user, m.isUser, m.is_human, m.isHuman, m.src__is_human, m.from_user, m.fromUser];
+  for (const flag of humanFlags) {
+    if (typeof flag === "boolean") {
+      return {
+        role: flag ? "user" : "assistant",
+        speaker: strField(m, "name", "src__name", "author_name", "sender_name", "speaker"),
+      };
+    }
   }
   if (m.src && typeof m.src === "object" && typeof m.src.is_human === "boolean") {
     return { role: m.src.is_human ? "user" : "assistant", speaker: strField(m.src, "name", "user__username") };
@@ -973,11 +1183,11 @@ function extractExplicitRole(m, userIds) {
     }
   }
   const roleStr = strField(m, "role", "sender", "author").toLowerCase();
-  const speaker = strField(m, "name", "speaker");
+  const speaker = strField(m, "name", "src__name", "author_name", "sender_name", "speaker");
   if (["user", "human", "me", "you"].includes(roleStr)) {
     return { role: "user", speaker };
   }
-  if (["assistant", "bot", "character", "ai", "replika", "model"].includes(roleStr)) {
+  if (["assistant", "bot", "character", "char", "ai", "replika", "model"].includes(roleStr)) {
     return { role: "assistant", speaker };
   }
   if (m.user_id && userIds.has(String(m.user_id).toLowerCase())) {
@@ -1016,7 +1226,7 @@ function buildCompanionFromMessages(
       role,
       speaker: role === "assistant" ? (speaker || detectedName) : (speaker || userName),
       text,
-      timestamp: normalizeTimestamp(m.create_time || m.timestamp || m.send_date || m.created_at),
+      timestamp: normalizeTimestamp(extractRawTimestamp(m)),
     });
   }
 

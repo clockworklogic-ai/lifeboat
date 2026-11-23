@@ -712,7 +712,10 @@ function renderReader(comp) {
     const t = slice[i];
     const div = document.createElement("div");
     div.className = "bubble " + (t.role === "user" ? "user" : "bot");
-    const ts = t.timestamp ? t.timestamp.slice(0, 16).replace("T", " ") : `#${start + i + 1}`;
+    const isIso = /^\d{4}-\d{2}-\d{2}/.test(t.timestamp || "");
+    const ts = isIso
+      ? t.timestamp.slice(0, 16).replace("T", " ")
+      : t.timestamp || `#${start + i + 1}`;
     div.innerHTML = `<div class="bubble-head"><strong>${escapeText(t.speaker)}</strong><span class="mono">${escapeText(ts)}</span></div>`;
     const body = document.createElement("div");
     body.className = "bubble-text";

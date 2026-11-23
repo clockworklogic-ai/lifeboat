@@ -405,3 +405,31 @@ func TestChatGPTActiveBranchAndEditableContext(t *testing.T) {
 		t.Fatalf("expected user_editable_context preserved in description, got %q", r.Card.Data.Description)
 	}
 }
+
+func TestLegacy2023And2024CAITimestamps(t *testing.T) {
+	raw := `{
+		"character": {"name": "Elias"},
+		"histories": [{
+			"msgs": [
+				{"src__is_human": false, "src__name": "Elias", "text": "Long time no see.", "created": "2023-08-14 19:20:00.000000+00:00"},
+				{"src__is_human": true, "src__name": "Sam", "text": "Almost a year.", "created_time": "2024-05-29 10:20:48.049888+00:00"}
+			]
+		}]
+	}`
+	res, err := ParseExport([]byte(raw), "")
+	if err != nil {
+		t.Fatalf("ParseExport legacy 2023/2024 failed: %v", err)
+	}
+	if len(res.History) != 2 {
+		t.Fatalf("got %d turns, want 2", len(res.History))
+	}
+	if !strings.HasPrefix(res.History[0].Timestamp, "2023-08-14T19:20:00") {
+		t.Fatalf("lost 2023 created timestamp: %q", res.History[0].Timestamp)
+	}
+	if !strings.HasPrefix(res.History[1].Timestamp, "2024-05-29T10:20:48") {
+		t.Fatalf("lost 2024 created_time timestamp: %q", res.History[1].Timestamp)
+	}
+	if res.History[0].Role != "assistant" || res.History[1].Role != "user" {
+		t.Fatalf("src__is_human roles wrong: %+v", res.History)
+	}
+}

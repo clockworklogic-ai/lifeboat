@@ -341,7 +341,7 @@ func parseMessageArray(sourceFormat string, rawMsgs []map[string]any, charName, 
 		if role == "assistant" && speaker != "" && speaker != "Character" && speaker != "Companion" && speaker != "assistant" {
 			detectedCharName = speaker
 		}
-		ts := strField(m, "create_time", strField(m, "timestamp", strField(m, "send_date", "")))
+		ts := extractTimestamp(m)
 		turns = append(turns, NormalizedTurn{
 			Role:      role,
 			Speaker:   speaker,
@@ -404,9 +404,69 @@ func parseMessageArray(sourceFormat string, rawMsgs []map[string]any, charName, 
 	}, nil
 }
 
+func extractTimestamp(m map[string]any) string {
+	keys := []string{
+		"create_time", "created", "created_at", "createdAt", "created_time", "createTime",
+		"send_date", "sent_at", "send_time", "timestamp", "date_unixtime", "date", "time",
+		"ts", "datetime", "last_update_time", "update_time", "updated_at",
+	}
+	pick := func(obj map[string]any) string {
+		if obj == nil {
+			return ""
+		}
+		for _, k := range keys {
+			v, ok := obj[k]
+			if !ok || v == nil {
+				continue
+			}
+			switch tv := v.(type) {
+			case string:
+				if s := strings.TrimSpace(tv); s != "" {
+					return normalizeGoTimestamp(s)
+				}
+			case float64:
+				if tv > 0 {
+					return normalizeGoTimestamp(fmt.Sprintf("%.0f", tv))
+				}
+			}
+		}
+		return ""
+	}
+	if s := pick(m); s != "" {
+		return s
+	}
+	if cand, ok := m["candidate"].(map[string]any); ok {
+		if s := pick(cand); s != "" {
+			return s
+		}
+	}
+	if cands, ok := m["candidates"].([]any); ok && len(cands) > 0 {
+		if c0, ok := cands[0].(map[string]any); ok {
+			if s := pick(c0); s != "" {
+				return s
+			}
+		}
+	}
+	return ""
+}
+
+func normalizeGoTimestamp(s string) string {
+	s = strings.TrimSpace(s)
+	// Normalize space-separated Postgres/Python ISO ("2024-05-29 10:20:48.049888+00:00")
+	if len(s) >= 19 && s[4] == '-' && s[7] == '-' && s[10] == ' ' {
+		s = s[:10] + "T" + s[11:]
+	}
+	return s
+}
+
 func extractText(m map[string]any) string {
-	for _, k := range []string{"raw_content", "text", "mes", "content", "message", "body"} {
+	for _, k := range []string{"raw_content", "text", "mes", "content", "message", "body", "msg", "utterance"} {
 		if s, ok := m[k].(string); ok && s != "" {
+			return s
+		}
+	}
+	if cand, ok := m["candidate"].(map[string]any); ok {
+		if s, ok := cand["raw_content"].(string); ok && s != "" {
 			return s
 		}
 	}
@@ -430,13 +490,15 @@ func extractRoleAndSpeaker(m map[string]any, charName, userName string) (string,
 		}
 		return "assistant", coalesce(name, charName)
 	}
-	// Flat is_human flag
-	if isHuman, ok := m["is_human"].(bool); ok {
-		name := strField(m, "name", "")
-		if isHuman {
-			return "user", coalesce(name, userName)
+	// Flat is_human or legacy 2023 src__is_human flag
+	for _, flagKey := range []string{"is_human", "src__is_human", "isHuman", "isUser", "from_user"} {
+		if isHuman, ok := m[flagKey].(bool); ok {
+			name := strField(m, "name", strField(m, "src__name", strField(m, "author_name", "")))
+			if isHuman {
+				return "user", coalesce(name, userName)
+			}
+			return "assistant", coalesce(name, charName)
 		}
-		return "assistant", coalesce(name, charName)
 	}
 	// Character.AI src.is_human / src.name
 	if src, ok := m["src"].(map[string]any); ok {

@@ -341,13 +341,18 @@ export function exportReadableMarkdown(companion, extraMemories = "") {
   lines.push("## Conversation Transcript", "");
   let lastDay = "";
   for (const t of companion.history || []) {
-    const day = t.timestamp ? t.timestamp.slice(0, 10) : "";
+    const isIso = /^\d{4}-\d{2}-\d{2}/.test(t.timestamp || "");
+    const day = isIso ? t.timestamp.slice(0, 10) : "";
     if (day && day !== lastDay) {
       lines.push(`### ${day}`, "");
       lastDay = day;
     }
-    const time = t.timestamp && t.timestamp.length >= 16 ? ` (${t.timestamp.slice(11, 16)} UTC)` : "";
-    lines.push(`**${t.speaker}**${time}:`);
+    const timeLabel = isIso
+      ? ` (${t.timestamp.slice(0, 16).replace("T", " ")} UTC)`
+      : t.timestamp
+        ? ` (${t.timestamp})`
+        : "";
+    lines.push(`**${t.speaker}**${timeLabel}:`);
     lines.push(t.text);
     lines.push("");
   }
@@ -365,6 +370,7 @@ function formatMessageHTML(text) {
 export function exportReadableHTML(companion, extraMemories = "") {
   const name = companion.card?.data?.name || "Companion";
   const turns = companion.history || [];
+  const hasAnyTimestamp = turns.some((t) => Boolean(t.timestamp));
   const metaBits = [
     companion.sourceLabel || companion.source_format,
     `${turns.length.toLocaleString("en-US")} messages`,
@@ -375,16 +381,26 @@ export function exportReadableHTML(companion, extraMemories = "") {
   const turnHTML = [];
   let lastDay = "";
   turns.forEach((t, i) => {
-    const day = t.timestamp ? t.timestamp.slice(0, 10) : "";
+    const rawTs = t.timestamp || "";
+    const isIso = /^\d{4}-\d{2}-\d{2}/.test(rawTs);
+    const day = isIso ? rawTs.slice(0, 10) : "";
     if (day && day !== lastDay) {
-      turnHTML.push(`<div class="day-sep">${escapeHTML(day)}</div>`);
+      turnHTML.push(`<div class="day-sep" data-day="${escapeHTML(day)}">${escapeHTML(day)}</div>`);
       lastDay = day;
     }
     const cls = t.role === "user" ? "msg user" : "msg bot";
-    const ts = t.timestamp ? t.timestamp.slice(0, 16).replace("T", " ") : `#${i + 1}`;
+    let tsMarkup;
+    if (isIso) {
+      const fallbackText = rawTs.length >= 16 ? `${rawTs.slice(0, 16).replace("T", " ")} UTC` : rawTs.slice(0, 10);
+      tsMarkup = `<time class="ts" datetime="${escapeHTML(rawTs)}">${escapeHTML(fallbackText)}</time>`;
+    } else if (rawTs) {
+      tsMarkup = `<span class="ts">${escapeHTML(rawTs)}</span>`;
+    } else {
+      tsMarkup = `<span class="ts">#${i + 1}</span>`;
+    }
     turnHTML.push(
-      `<article class="${cls}" data-q="${escapeHTML((t.speaker + " " + t.text).toLowerCase())}">` +
-        `<div class="meta"><strong>${escapeHTML(t.speaker)}</strong><span>${escapeHTML(ts)}</span></div>` +
+      `<article class="${cls}" data-q="${escapeHTML((t.speaker + " " + rawTs + " " + t.text).toLowerCase())}">` +
+        `<div class="meta"><strong>${escapeHTML(t.speaker)}</strong>${tsMarkup}</div>` +
         `<div class="body">${formatMessageHTML(t.text)}</div>` +
       `</article>`
     );
@@ -392,6 +408,10 @@ export function exportReadableHTML(companion, extraMemories = "") {
 
   const memSection = extraMemories?.trim()
     ? `<section class="notes"><h2>Saved Memories &amp; Instructions</h2><pre>${escapeHTML(extraMemories.trim())}</pre></section>`
+    : "";
+
+  const tsBtn = hasAnyTimestamp
+    ? `<button id="ts-btn" type="button" onclick="toggleTimestamps()">Timestamps: On</button>`
     : "";
 
   return `<!doctype html>
@@ -424,6 +444,8 @@ main{padding:1.25rem}
 .msg.bot{margin-right:2.2rem}
 .meta{display:flex;justify-content:space-between;gap:.5rem;font-size:.8rem;color:var(--muted);margin-bottom:.35rem}
 .meta strong{color:var(--accent)}
+.ts{font-family:ui-monospace,Menlo,monospace;font-size:.76rem}
+body.hide-ts .ts,body.hide-ts .day-sep{display:none}
 .body em{color:var(--muted)}
 .hidden{display:none}
 footer{text-align:center;color:var(--muted);font-size:.8rem;padding:2rem 1rem}
@@ -439,6 +461,7 @@ footer{text-align:center;color:var(--muted);font-size:.8rem;padding:2rem 1rem}
     <div class="controls">
       <input id="q" type="search" placeholder="Search ${turns.length.toLocaleString("en-US")} messages offline...">
       <span id="count" style="font-size:.82rem;color:var(--muted)"></span>
+      ${tsBtn}
       <button type="button" onclick="toggleTheme()">Theme</button>
       <button type="button" onclick="window.print()">Print / PDF</button>
     </div>
@@ -451,6 +474,13 @@ footer{text-align:center;color:var(--muted);font-size:.8rem;padding:2rem 1rem}
 <footer>Preserved offline via Lifeboat · Self-contained HTML file (no internet required).</footer>
 <script>
 const q=document.getElementById('q'),count=document.getElementById('count'),msgs=[...document.querySelectorAll('.msg')];
+try{
+  const fmt=new Intl.DateTimeFormat(undefined,{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+  for(const el of document.querySelectorAll('time.ts[datetime]')){
+    const d=new Date(el.getAttribute('datetime'));
+    if(!isNaN(d.getTime()))el.textContent=fmt.format(d);
+  }
+}catch{}
 q.addEventListener('input',()=>{
   const v=q.value.trim().toLowerCase();
   let shown=0;
@@ -464,6 +494,11 @@ q.addEventListener('input',()=>{
 function toggleTheme(){
   const cur=document.documentElement.getAttribute('data-theme');
   document.documentElement.setAttribute('data-theme',cur==='dark'?'light':'dark');
+}
+function toggleTimestamps(){
+  const off=document.body.classList.toggle('hide-ts');
+  const b=document.getElementById('ts-btn');
+  if(b)b.textContent=off?'Timestamps: Off':'Timestamps: On';
 }
 </script>
 </body>

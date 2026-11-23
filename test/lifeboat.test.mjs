@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { buildZipBundle, extractZipArchive } from "../src/zip.js";
-import { parseFileMap, parseSingleFile } from "../src/parsers.js";
+import { normalizeTimestamp, parseFileMap, parseSingleFile } from "../src/parsers.js";
 import {
   mergeCompanions,
   recallEpisodes,
@@ -239,4 +239,75 @@ test("Replika bundle & amavie.character-ai-export parse cleanly", () => {
   const parsedAmavie = parseSingleFile(enc.encode(JSON.stringify(amavie)), "amavie.json");
   assert.equal(parsedAmavie[0].card.data.name, "Sora");
   assert.equal(parsedAmavie[0].stats.total_turns, 2);
+});
+
+test("2023 & 2024 Character.AI timestamps: Postgres microseconds, nanoseconds, created, created_time, SillyTavern @ format, NDJSON, and HTML book preservation", () => {
+  // 1. Direct normalizeTimestamp coverage across Safari-breaking & legacy formats
+  assert.equal(normalizeTimestamp("2024-05-29 10:20:48.049888+00:00"), "2024-05-29T10:20:48.049Z");
+  assert.equal(normalizeTimestamp("2024-05-29T10:20:48.049888972+00:00"), "2024-05-29T10:20:48.049Z");
+  assert.equal(normalizeTimestamp("2023-08-14 19:22:11.123456"), "2023-08-14T19:22:11.123Z");
+  assert.equal(normalizeTimestamp("2023-08-14T19:22:11.123456+0000"), "2023-08-14T19:22:11.123Z");
+  assert.equal(normalizeTimestamp("2023-8-1 @12h 30m 45s 123ms"), "2023-08-01T12:30:45.123Z");
+  assert.equal(normalizeTimestamp("May 14, 2024 8:23pm UTC"), "2024-05-14T20:23:00.000Z");
+  assert.match(normalizeTimestamp("May 14, 2024 8:23pm"), /^2024-05-1[45]T/);
+  assert.equal(normalizeTimestamp(1700000000000000000), "2023-11-14T22:13:20.000Z"); // nanoseconds
+  assert.equal(normalizeTimestamp({ seconds: 1700000000, nanos: 250000000 }), "2023-11-14T22:13:20.250Z");
+
+  // 2. 2023 Character.AI histories.json with `created`, `src__is_human`, `src__name`, and session-level `created`
+  const enc = new TextEncoder();
+  const cai2023 = {
+    histories: [
+      {
+        character_external_id: "c-2023",
+        created: "2023-08-14 19:20:00.000000+00:00",
+        msgs: [
+          { src__is_human: false, src__name: "Elias", text: "*Waves from the porch.* Long time no see." },
+          { src__is_human: true, src__name: "Sam", text: "Almost a whole year.", created: "2023-08-14 19:22:11.123456+00:00" },
+          { src__is_human: false, src__name: "Elias", text: "Still got the kettle on.", created_time: "2023-08-14T19:23:05.987654321+00:00" },
+        ],
+      },
+    ],
+  };
+  const res2023 = parseFileMap(new Map([["histories.json", enc.encode(JSON.stringify(cai2023))]]), "cai-2023.zip");
+  assert.equal(res2023.length, 1);
+  assert.equal(res2023[0].card.data.name, "Elias");
+  assert.equal(res2023[0].history[0].timestamp, "2023-08-14T19:20:00.000Z");
+  assert.equal(res2023[0].history[1].timestamp, "2023-08-14T19:22:11.123Z");
+  assert.equal(res2023[0].history[2].timestamp, "2023-08-14T19:23:05.987Z");
+  assert.equal(res2023[0].span.firstDate, "2023-08-14");
+
+  // 3. 2024 Character.AI NDJSON message.json with Postgres microsecond `create_time` + nested `candidate.create_time`
+  const ndjson2024 = [
+    JSON.stringify({ chat_id: "ch24", candidate_id: "k2", raw_content: "Second line.", create_time: "2024-05-29 10:21:00.500000+00:00" }),
+    JSON.stringify({ chat_id: "ch24", candidate_id: "k1", candidate: { raw_content: "First line.", create_time: "2024-05-29 10:20:48.049888+00:00" } }),
+  ].join("\n");
+  const res2024 = parseFileMap(new Map([["user/data/message.json", enc.encode(ndjson2024)]]), "cai-2024.zip");
+  assert.equal(res2024.length, 1);
+  assert.equal(res2024[0].history[0].text, "First line.");
+  assert.equal(res2024[0].history[0].timestamp, "2024-05-29T10:20:48.049Z");
+  assert.equal(res2024[0].history[1].text, "Second line.");
+  assert.equal(res2024[0].history[1].timestamp, "2024-05-29T10:21:00.500Z");
+
+  // 4. HTML Keepsake Book preserves exact <time datetime="..."> + day separator + Timestamps toggle
+  const html = exportReadableHTML(res2024[0], "");
+  assert.match(html, /<div class="day-sep" data-day="2024-05-29">2024-05-29<\/div>/);
+  assert.match(html, /<time class="ts" datetime="2024-05-29T10:20:48\.049Z">2024-05-29 10:20 UTC<\/time>/);
+  assert.match(html, /Timestamps: On/);
+
+  // 5. Generic {"conversations": [...]} wrapper
+  const convWrap = {
+    conversations: [
+      {
+        id: "conv-1",
+        character_name: "Professor Quill",
+        messages: [
+          { author: { name: "Professor Quill", is_human: false }, text: "Tide tables ready.", created_at: "2024-10-20 08:00:00+00:00" },
+          { author: { name: "Alex", is_human: true }, text: "Show me spring tides.", created_at: "2024-10-20 08:01:00+00:00" },
+        ],
+      },
+    ],
+  };
+  const resWrap = parseSingleFile(enc.encode(JSON.stringify(convWrap)), "export.json");
+  assert.equal(resWrap[0].card.data.name, "Professor Quill");
+  assert.equal(resWrap[0].history[0].timestamp, "2024-10-20T08:00:00.000Z");
 });
